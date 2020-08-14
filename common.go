@@ -50,7 +50,9 @@ const (
 	TableSSL                      string = "SSL"
 	TableGatewayChassis           string = "Gateway_Chassis"
 	TableChassis                  string = "Chassis"
+	TableDatapathBinding          string = "Datapath_Binding"
 	TableEncap                    string = "Encap"
+	TablePortBinding              string = "Port_Binding"
 	TableSBGlobal                 string = "SB_Global"
 )
 
@@ -78,6 +80,8 @@ var NBTablesOrder = []string{
 
 var SBTablesOrder = []string{
 	TableChassis,
+	TableDatapathBinding,
 	TableEncap,
+	TablePortBinding,
 	TableSBGlobal,
 }
