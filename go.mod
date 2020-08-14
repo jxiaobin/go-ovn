@@ -1,4 +1,4 @@
-module github.com/ebay/go-ovn
+module github.com/girishmg/go-ovn
 
 go 1.12
 
