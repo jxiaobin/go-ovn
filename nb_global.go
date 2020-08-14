@@ -16,6 +16,8 @@
 
 package goovn
 
+import "github.com/ebay/libovsdb"
+
 type NBGlobalTableRow struct {
 	UUID        string
 	Options     map[interface{}]interface{}
@@ -23,6 +25,9 @@ type NBGlobalTableRow struct {
 	Connections []string
 	SSL         string
 	IPSec       bool
+	NBCfg       int
+	SBCfg       int
+	HVCfg       int
 }
 
 func (odbi *ovndb) nbGlobalAddImp(options map[string]string) (*OvnCommand, error) {
@@ -42,4 +47,56 @@ func (odbi *ovndb) nbGlobalSetOptionsImp(options map[string]string) (*OvnCommand
 
 func (odbi *ovndb) nbGlobalGetOptionsImp() (map[string]string, error) {
 	return odbi.globalGetOptionsImp(TableNBGlobal)
+}
+
+func (odbi *ovndb) rowToNBGlobal(uuid string) *NBGlobalTableRow {
+	cacheNBGlobal, ok := odbi.cache[TableNBGlobal][uuid]
+	if !ok {
+		return nil
+	}
+
+	nbGlobal := &NBGlobalTableRow{
+		UUID:       uuid,
+		Options:    cacheNBGlobal.Fields["options"].(libovsdb.OvsMap).GoMap,
+		ExternalID: cacheNBGlobal.Fields["external_ids"].(libovsdb.OvsMap).GoMap,
+		IPSec:      cacheNBGlobal.Fields["ipsec"].(bool),
+		NBCfg:      cacheNBGlobal.Fields["nb_cfg"].(int),
+		SBCfg:      cacheNBGlobal.Fields["sb_cfg"].(int),
+		HVCfg:      cacheNBGlobal.Fields["hv_cfg"].(int),
+	}
+	switch cacheNBGlobal.Fields["ssl"].(type) {
+	case libovsdb.UUID:
+		nbGlobal.SSL = cacheNBGlobal.Fields["ssl"].(libovsdb.UUID).GoUUID
+	default:
+	}
+	connections := cacheNBGlobal.Fields["connections"]
+	switch connections.(type) {
+	case string:
+		nbGlobal.Connections = []string{connections.(string)}
+	case libovsdb.OvsSet:
+		nbGlobal.Connections = odbi.ConvertGoSetToStringArray(connections.(libovsdb.OvsSet))
+	}
+	return nbGlobal
+}
+
+func (odbi *ovndb) NBGlobalList() ([]*NBGlobalTableRow, error) {
+	odbi.cachemutex.RLock()
+	defer odbi.cachemutex.RUnlock()
+
+	cacheNBGlobal, ok := odbi.cache[TableNBGlobal]
+	if !ok {
+		return nil, ErrorNotFound
+	}
+
+	nbGlobalList := make([]*NBGlobalTableRow, 0, len(cacheNBGlobal))
+	i := 0
+	for uuid := range cacheNBGlobal {
+		nbGlobalList[i] = odbi.rowToNBGlobal(uuid)
+		i++
+	}
+
+	if len(nbGlobalList) == 0 {
+		return nil, ErrorNotFound
+	}
+	return nbGlobalList, nil
 }

@@ -198,6 +198,9 @@ type Client interface {
 	// Get NB_Global table options
 	NBGlobalGetOptions() (map[string]string, error)
 
+	// List NB_Global table rows
+	NBGlobalList() ([]*NBGlobalTableRow, error)
+
 	// Set SB_Global table options
 	SBGlobalSetOptions(options map[string]string) (*OvnCommand, error)
 
