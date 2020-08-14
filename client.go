@@ -204,6 +204,12 @@ type Client interface {
 	// Get SB_Global table options
 	SBGlobalGetOptions() (map[string]string, error)
 
+	// Datapath binding
+	DatapathBindingGetByName(name string) ([]*DatapathBinding, error)
+
+	// Port binding
+	PortBindingList(searchMap map[string]string) ([]*PortBinding, error)
+
 	// Close connection to OVN
 	Close() error
 }

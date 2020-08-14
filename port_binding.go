@@ -51,7 +51,7 @@ func (odbi *ovndb) rowToPortBinding(uuid string) (*PortBinding, error) {
 	return portBinding, nil
 }
 
-func (ovnSB *ovndb) portBindingListImp(searchMap map[string]string) ([]*PortBinding, error) {
+func (ovnSB *ovndb) PortBindingList(searchMap map[string]string) ([]*PortBinding, error) {
 	var listPB []*PortBinding
 
 	ovnSB.cachemutex.RLock()
