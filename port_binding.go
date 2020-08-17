@@ -25,6 +25,50 @@ type PortBinding struct {
 	VirtualParent  string
 }
 
+func (odbi *ovndb) ConvertUUIDToString(row libovsdb.Row, field string) string {
+	fieldValue := row.Fields[field]
+	switch fieldValue.(type) {
+	case libovsdb.UUID:
+		return fieldValue.(libovsdb.UUID).GoUUID
+	}
+	return ""
+}
+
+func (odbi *ovndb) ConvertGoSetToInt(oset libovsdb.OvsSet) []int {
+	var ret []int
+	for _, s := range oset.GoSet {
+		value, ok := s.(int)
+		if ok {
+			ret = append(ret, value)
+		}
+	}
+	return ret
+}
+
+func (odbi *ovndb) ConvertToStringArray(row libovsdb.Row, field string) []string {
+	fieldValue := row.Fields[field]
+	switch fieldValue.(type) {
+	case libovsdb.UUID:
+		return []string{fieldValue.(libovsdb.UUID).GoUUID}
+	case string:
+		return []string{fieldValue.(string)}
+	case libovsdb.OvsSet:
+		return odbi.ConvertGoSetToStringArray(fieldValue.(libovsdb.OvsSet))
+	}
+	return nil
+}
+
+func (odbi *ovndb) ConvertToIntArray(row libovsdb.Row, field string) []int {
+	fieldValue := row.Fields[field]
+	switch fieldValue.(type) {
+	case int:
+		return []int{fieldValue.(int)}
+	case libovsdb.OvsSet:
+		return odbi.ConvertGoSetToInt(fieldValue.(libovsdb.OvsSet))
+	}
+	return nil
+}
+
 func (odbi *ovndb) rowToPortBinding(uuid string) (*PortBinding, error) {
 	cachePortBinding, ok := odbi.cache[TablePortBinding][uuid]
 	if !ok {
@@ -32,45 +76,57 @@ func (odbi *ovndb) rowToPortBinding(uuid string) (*PortBinding, error) {
 	}
 	portBinding := &PortBinding{
 		UUID:           uuid,
-		Chassis:        cachePortBinding.Fields["chassis"].(string),
-		Datapath:       cachePortBinding.Fields["datapath"].(string),
-		Encap:          cachePortBinding.Fields["encap"].(string),
+		Chassis:        odbi.ConvertUUIDToString(cachePortBinding, "chassis"),
+		Datapath:       odbi.ConvertUUIDToString(cachePortBinding, "datapath"),
+		Encap:          odbi.ConvertUUIDToString(cachePortBinding, "encap"),
 		ExternalID:     cachePortBinding.Fields["external_ids"].(libovsdb.OvsMap).GoMap,
-		GatewayChassis: nil,
-		HaChassisGroup: cachePortBinding.Fields["ha_chassis_group"].(string),
+		GatewayChassis: odbi.ConvertToStringArray(cachePortBinding, "gateway_chassis"),
+		HaChassisGroup: odbi.ConvertUUIDToString(cachePortBinding, "ha_chassis_group"),
 		LogicalPort:    cachePortBinding.Fields["logical_port"].(string),
-		Mac:            nil,
-		NatAddresses:   nil,
+		Mac:            odbi.ConvertToStringArray(cachePortBinding, "mac"),
+		NatAddresses:   odbi.ConvertToStringArray(cachePortBinding, "nat_addresses"),
 		Options:        cachePortBinding.Fields["options"].(libovsdb.OvsMap).GoMap,
-		ParentPort:     cachePortBinding.Fields["parent_port"].(string),
-		Tag:            cachePortBinding.Fields["tag"].(int),
-		TunnelKey:      cachePortBinding.Fields["tunnel_key"].(int),
-		Type:           cachePortBinding.Fields["type"].(string),
-		VirtualParent:  cachePortBinding.Fields["virtual_parent"].(string),
+		ParentPort:     odbi.ConvertUUIDToString(cachePortBinding, "parent_port"),
+		TunnelKey:     cachePortBinding.Fields["tunnel_key"].(int),
+		Type:          cachePortBinding.Fields["type"].(string),
+		VirtualParent: "",
+	}
+	tagValue := odbi.ConvertToIntArray(cachePortBinding, "tag")
+	portBinding.Tag = 0
+	if len(tagValue) != 0 {
+		portBinding.Tag = tagValue[0]
 	}
 	return portBinding, nil
 }
 
-func (ovnSB *ovndb) PortBindingList(searchMap map[string]string) ([]*PortBinding, error) {
+func (odbi *ovndb) PortBindingList(searchMap map[string]string) ([]*PortBinding, error) {
 	var listPB []*PortBinding
 
-	ovnSB.cachemutex.RLock()
-	defer ovnSB.cachemutex.RUnlock()
+	odbi.cachemutex.RLock()
+	defer odbi.cachemutex.RUnlock()
 
-	cachePortBinding, ok := ovnSB.cache[TablePortBinding]
+	cachePortBinding, ok := odbi.cache[TablePortBinding]
 	if !ok {
 		return nil, ErrorSchema
 	}
 
-	for uuid, drows := range cachePortBinding {
-		var pb *PortBinding
+	for uuid := range cachePortBinding {
 		var err error
 		var matchedKeys int
 
+		portBinding, err := odbi.rowToPortBinding(uuid)
+		if err != nil {
+			continue
+		}
 		if searchMap != nil {
 			for searchKey, searchValue := range searchMap {
-				if colValue, ok := drows.Fields[searchKey]; ok {
-					if colValue, ok := colValue.(string); ok && colValue == searchValue {
+				switch searchKey {
+				case "chassis":
+					if searchValue == portBinding.Chassis {
+						matchedKeys++
+					}
+				case "logical_port":
+					if searchValue == portBinding.LogicalPort {
 						matchedKeys++
 					}
 				}
@@ -79,11 +135,7 @@ func (ovnSB *ovndb) PortBindingList(searchMap map[string]string) ([]*PortBinding
 		if matchedKeys != len(searchMap) {
 			continue
 		}
-		pb, err = ovnSB.rowToPortBinding(uuid)
-		if err != nil {
-			return nil, err
-		}
-		listPB = append(listPB, pb)
+		listPB = append(listPB, portBinding)
 	}
 	return listPB, nil
 }

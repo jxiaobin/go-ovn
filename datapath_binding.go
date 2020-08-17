@@ -25,13 +25,25 @@ func (odbi *ovndb) rowToDatapathBinding(uuid string) (*DatapathBinding, error) {
 	return datapathBinding, nil
 }
 
-func (ovnSB *ovndb) DatapathBindingGetByName(name string) ([]*DatapathBinding, error) {
+func (odbi *ovndb) DatapathBindingGet(uuid string) (*DatapathBinding, error) {
+	odbi.cachemutex.RLock()
+	defer odbi.cachemutex.RUnlock()
+
+	_, ok := odbi.cache[TableDatapathBinding]
+	if !ok {
+		return nil, ErrorSchema
+	}
+
+	return odbi.rowToDatapathBinding(uuid)
+}
+
+func (odbi *ovndb) DatapathBindingGetByName(name string) ([]*DatapathBinding, error) {
 	var listDatapathBinding []*DatapathBinding
 
-	ovnSB.cachemutex.RLock()
-	defer ovnSB.cachemutex.RUnlock()
+	odbi.cachemutex.RLock()
+	defer odbi.cachemutex.RUnlock()
 
-	cacheDatapathBinding, ok := ovnSB.cache[TableDatapathBinding]
+	cacheDatapathBinding, ok := odbi.cache[TableDatapathBinding]
 	if !ok {
 		return nil, ErrorSchema
 	}
@@ -39,7 +51,7 @@ func (ovnSB *ovndb) DatapathBindingGetByName(name string) ([]*DatapathBinding, e
 	for uuid, drows := range cacheDatapathBinding {
 		if external_ids, ok := drows.Fields["external_ids"].(libovsdb.OvsMap); ok {
 			if external_ids.GoMap["name"] == name {
-				dpBinding, err := ovnSB.rowToDatapathBinding(uuid)
+				dpBinding, err := odbi.rowToDatapathBinding(uuid)
 				if err != nil {
 					return nil, err
 				}

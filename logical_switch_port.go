@@ -35,6 +35,8 @@ type LogicalSwitchPort struct {
 	DHCPv4Options    string
 	DHCPv6Options    string
 	ExternalID       map[interface{}]interface{}
+	Enabled          bool
+	Up               bool
 }
 
 func (odbi *ovndb) lspAddImp(lsw, lsp string) (*OvnCommand, error) {
@@ -312,6 +314,17 @@ func (odbi *ovndb) lspGetExternalIdsImp(lsp string) (map[string]string, error) {
 	return extIds, nil
 }
 
+func (odbi *ovndb) ConvertGoSetToBoolArray(oset libovsdb.OvsSet) []bool {
+	var ret = []bool{}
+	for _, s := range oset.GoSet {
+		value, ok := s.(bool)
+		if ok {
+			ret = append(ret, value)
+		}
+	}
+	return ret
+}
+
 func (odbi *ovndb) rowToLogicalPort(uuid string) (*LogicalSwitchPort, error) {
 	lp := &LogicalSwitchPort{
 		UUID:       uuid,
@@ -374,6 +387,25 @@ func (odbi *ovndb) rowToLogicalPort(uuid string) (*LogicalSwitchPort, error) {
 		}
 	}
 
+	if enabled, ok := odbi.cache[TableLogicalSwitchPort][uuid].Fields["enabled"]; ok {
+		switch enabled.(type) {
+		case bool:
+			lp.Enabled = enabled.(bool)
+		case libovsdb.OvsSet:
+			value := odbi.ConvertGoSetToBoolArray(enabled.(libovsdb.OvsSet))
+			lp.Enabled = len(value) != 0 && value[0]
+		}
+	}
+
+	if up, ok := odbi.cache[TableLogicalSwitchPort][uuid].Fields["up"]; ok {
+		switch up.(type) {
+		case bool:
+			lp.Up = up.(bool)
+		case libovsdb.OvsSet:
+			value := odbi.ConvertGoSetToBoolArray(up.(libovsdb.OvsSet))
+			lp.Up = len(value) != 0 && value[0]
+		}
+	}
 	return lp, nil
 }
 

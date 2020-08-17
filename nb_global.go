@@ -88,7 +88,7 @@ func (odbi *ovndb) NBGlobalList() ([]*NBGlobalTableRow, error) {
 		return nil, ErrorNotFound
 	}
 
-	nbGlobalList := make([]*NBGlobalTableRow, 0, len(cacheNBGlobal))
+	nbGlobalList := make([]*NBGlobalTableRow, len(cacheNBGlobal))
 	i := 0
 	for uuid := range cacheNBGlobal {
 		nbGlobalList[i] = odbi.rowToNBGlobal(uuid)

@@ -210,6 +210,9 @@ type Client interface {
 	// Datapath binding
 	DatapathBindingGetByName(name string) ([]*DatapathBinding, error)
 
+	// Datapath binding Get
+	DatapathBindingGet(uuid string) (*DatapathBinding, error)
+
 	// Port binding
 	PortBindingList(searchMap map[string]string) ([]*PortBinding, error)
 
