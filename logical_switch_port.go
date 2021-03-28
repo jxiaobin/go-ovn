@@ -429,8 +429,6 @@ func (odbi *ovndb) lspGetImp(lsp string) (*LogicalSwitchPort, error) {
 
 // Get all lport by lswitch
 func (odbi *ovndb) lspListImp(lsw string) ([]*LogicalSwitchPort, error) {
-	var listLSP []*LogicalSwitchPort
-
 	odbi.cachemutex.RLock()
 	defer odbi.cachemutex.RUnlock()
 
@@ -438,7 +436,6 @@ func (odbi *ovndb) lspListImp(lsw string) ([]*LogicalSwitchPort, error) {
 	if !ok {
 		return nil, ErrorSchema
 	}
-	var lsFound bool
 	for _, drows := range cacheLogicalSwitch {
 		if rlsw, ok := drows.Fields["name"].(string); ok && rlsw == lsw {
 			ports := drows.Fields["ports"]
@@ -446,6 +443,7 @@ func (odbi *ovndb) lspListImp(lsw string) ([]*LogicalSwitchPort, error) {
 				switch ports.(type) {
 				case libovsdb.OvsSet:
 					if ps, ok := ports.(libovsdb.OvsSet); ok {
+						listLSP := make([]*LogicalSwitchPort, 0, len(ps.GoSet))
 						for _, p := range ps.GoSet {
 							if vp, ok := p.(libovsdb.UUID); ok {
 								tp, err := odbi.rowToLogicalPort(vp.GoUUID)
@@ -455,6 +453,7 @@ func (odbi *ovndb) lspListImp(lsw string) ([]*LogicalSwitchPort, error) {
 								listLSP = append(listLSP, tp)
 							}
 						}
+						return listLSP, nil
 					} else {
 						return nil, fmt.Errorf("type libovsdb.OvsSet casting failed")
 					}
@@ -464,7 +463,7 @@ func (odbi *ovndb) lspListImp(lsw string) ([]*LogicalSwitchPort, error) {
 						if err != nil {
 							return nil, fmt.Errorf("Failed to get logical port: %s", err)
 						}
-						listLSP = append(listLSP, tp)
+						return []*LogicalSwitchPort{tp}, nil
 					} else {
 						return nil, fmt.Errorf("type libovsdb.UUID casting failed")
 					}
@@ -472,12 +471,8 @@ func (odbi *ovndb) lspListImp(lsw string) ([]*LogicalSwitchPort, error) {
 					return nil, fmt.Errorf("Unsupported type found in ovsdb rows")
 				}
 			}
-			lsFound = true
-			break
+			return []*LogicalSwitchPort{}, nil
 		}
 	}
-	if !lsFound {
-		return nil, ErrorNotFound
-	}
-	return listLSP, nil
+	return nil, ErrorNotFound
 }

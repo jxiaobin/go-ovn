@@ -101,14 +101,18 @@ func (odbi *ovndb) lrGetImp(name string) ([]*LogicalRouter, error) {
 }
 
 func (odbi *ovndb) rowToLogicalRouter(uuid string) *LogicalRouter {
+	cacheLogicalRouter, ok := odbi.cache[TableLogicalRouter][uuid]
+	if !ok {
+		return nil
+	}
 	lr := &LogicalRouter{
 		UUID:       uuid,
-		Name:       odbi.cache[TableLogicalRouter][uuid].Fields["name"].(string),
-		Options:    odbi.cache[TableLogicalRouter][uuid].Fields["options"].(libovsdb.OvsMap).GoMap,
-		ExternalID: odbi.cache[TableLogicalRouter][uuid].Fields["external_ids"].(libovsdb.OvsMap).GoMap,
+		Name:       cacheLogicalRouter.Fields["name"].(string),
+		Options:    cacheLogicalRouter.Fields["options"].(libovsdb.OvsMap).GoMap,
+		ExternalID: cacheLogicalRouter.Fields["external_ids"].(libovsdb.OvsMap).GoMap,
 	}
 
-	if enabled, ok := odbi.cache[TableLogicalRouter][uuid].Fields["enabled"]; ok {
+	if enabled, ok := cacheLogicalRouter.Fields["enabled"]; ok {
 		switch enabled.(type) {
 		case bool:
 			lr.Enabled = enabled.(bool)
@@ -119,104 +123,47 @@ func (odbi *ovndb) rowToLogicalRouter(uuid string) *LogicalRouter {
 		}
 	}
 
-	var lbs []string
-	load_balancer := odbi.cache[TableLogicalRouter][uuid].Fields["load_balancer"]
-	if load_balancer != nil {
-		switch load_balancer.(type) {
-		case libovsdb.OvsSet:
-			if lb, ok := load_balancer.(libovsdb.OvsSet); ok {
-				for _, l := range lb.GoSet {
-					if lb, ok := l.(libovsdb.UUID); ok {
-						lb, _ := odbi.rowToLB(lb.GoUUID)
-						lbs = append(lbs, lb.Name)
-					}
-				}
-			}
+	if lbs, ok := cacheLogicalRouter.Fields["load_balancer"]; ok {
+		switch lbs.(type) {
 		case libovsdb.UUID:
-			if lb, ok := load_balancer.(libovsdb.UUID); ok {
-				lb, _ := odbi.rowToLB(lb.GoUUID)
-
-				lbs = append(lbs, lb.Name)
-			}
+			lr.LoadBalancer = []string{lbs.(libovsdb.UUID).GoUUID}
+		case libovsdb.OvsSet:
+			lr.LoadBalancer = odbi.ConvertGoSetToStringArray(lbs.(libovsdb.OvsSet))
 		}
 	}
-	lr.LoadBalancer = lbs
 
-	var lps []string
-	ports := odbi.cache[TableLogicalRouter][uuid].Fields["ports"]
-	if ports != nil {
+	if ports, ok := cacheLogicalRouter.Fields["ports"]; ok {
 		switch ports.(type) {
-		case string:
-			lr.Ports = []string{ports.(string)}
-		case libovsdb.OvsSet:
-			if ps, ok := ports.(libovsdb.OvsSet); ok {
-				for _, p := range ps.GoSet {
-					if vp, ok := p.(libovsdb.UUID); ok {
-						tp := odbi.rowToLogicalRouterPort(vp.GoUUID)
-						lps = append(lps, tp.Name)
-					}
-				}
-			}
 		case libovsdb.UUID:
-			if vp, ok := ports.(libovsdb.UUID); ok {
-				tp := odbi.rowToLogicalRouterPort(vp.GoUUID)
-				lps = append(lps, tp.Name)
-			}
+			lr.Ports = []string{ports.(libovsdb.UUID).GoUUID}
+		case libovsdb.OvsSet:
+			lr.Ports = odbi.ConvertGoSetToStringArray(ports.(libovsdb.OvsSet))
 		}
 	}
-	lr.Ports = lps
 
-	var listLRSR []string
-	staticRoutes := odbi.cache[TableLogicalRouter][uuid].Fields["static_routes"]
-	if staticRoutes != nil {
-		switch staticRoutes.(type) {
-		case libovsdb.OvsSet:
-			if sr, ok := staticRoutes.(libovsdb.OvsSet); ok {
-				for _, s := range sr.GoSet {
-					if sruid, ok := s.(libovsdb.UUID); ok {
-						rsr := odbi.rowToLogicalRouterStaticRoute(sruid.GoUUID)
-						listLRSR = append(listLRSR, rsr.IPPrefix)
-					}
-				}
-			}
+	if lrsrs, ok := cacheLogicalRouter.Fields["static_routes"]; ok {
+		switch lrsrs.(type) {
 		case libovsdb.UUID:
-			if sruid, ok := staticRoutes.(libovsdb.UUID); ok {
-				rsr := odbi.rowToLogicalRouterStaticRoute(sruid.GoUUID)
-				listLRSR = append(listLRSR, rsr.IPPrefix)
-			}
+			lr.StaticRoutes = []string{lrsrs.(libovsdb.UUID).GoUUID}
+		case libovsdb.OvsSet:
+			lr.StaticRoutes = odbi.ConvertGoSetToStringArray(lrsrs.(libovsdb.OvsSet))
 		}
 	}
-	lr.StaticRoutes = listLRSR
 
-	var NATList []string
-	nat := odbi.cache[TableLogicalRouter][uuid].Fields["nat"]
-	if nat != nil {
-		switch nat.(type) {
-		case libovsdb.OvsSet:
-			if sr, ok := nat.(libovsdb.OvsSet); ok {
-				for _, s := range sr.GoSet {
-					if sruid, ok := s.(libovsdb.UUID); ok {
-						rsr := odbi.rowToNat(sruid.GoUUID)
-						NATList = append(NATList, rsr.UUID)
-					}
-				}
-			}
+	if nats, ok := cacheLogicalRouter.Fields["nat"]; ok {
+		switch nats.(type) {
 		case libovsdb.UUID:
-			if sruid, ok := nat.(libovsdb.UUID); ok {
-				rsr := odbi.rowToNat(sruid.GoUUID)
-				NATList = append(NATList, rsr.UUID)
-			}
+			lr.NAT = []string{nats.(libovsdb.UUID).GoUUID}
+		case libovsdb.OvsSet:
+			lr.NAT = odbi.ConvertGoSetToStringArray(nats.(libovsdb.OvsSet))
 		}
 	}
-	lr.NAT = NATList
 
 	return lr
 }
 
-// Get all logical switches
+// Get all logical routers
 func (odbi *ovndb) lrListImp() ([]*LogicalRouter, error) {
-	var listLR []*LogicalRouter
-
 	odbi.cachemutex.RLock()
 	defer odbi.cachemutex.RUnlock()
 
@@ -225,6 +172,7 @@ func (odbi *ovndb) lrListImp() ([]*LogicalRouter, error) {
 		return nil, ErrorNotFound
 	}
 
+	listLR := make([]*LogicalRouter, 0, len(cacheLogicalRouter))
 	for uuid := range cacheLogicalRouter {
 		listLR = append(listLR, odbi.rowToLogicalRouter(uuid))
 	}
@@ -296,7 +244,6 @@ func (odbi *ovndb) lrlbDelImp(lr string, lb string) (*OvnCommand, error) {
 }
 
 func (odbi *ovndb) lrlbListImp(lr string) ([]*LoadBalancer, error) {
-	var listLB []*LoadBalancer
 	odbi.cachemutex.RLock()
 	defer odbi.cachemutex.RUnlock()
 
@@ -304,7 +251,6 @@ func (odbi *ovndb) lrlbListImp(lr string) ([]*LoadBalancer, error) {
 	if !ok {
 		return nil, ErrorSchema
 	}
-	var lrFound bool
 	for _, drows := range cacheLogicalRouter {
 		if router, ok := drows.Fields["name"].(string); ok && router == lr {
 			lbs := drows.Fields["load_balancer"]
@@ -312,6 +258,7 @@ func (odbi *ovndb) lrlbListImp(lr string) ([]*LoadBalancer, error) {
 				switch lbs.(type) {
 				case libovsdb.OvsSet:
 					if lb, ok := lbs.(libovsdb.OvsSet); ok {
+						listLB := make([]*LoadBalancer, 0, len(lb.GoSet))
 						for _, l := range lb.GoSet {
 							if lb, ok := l.(libovsdb.UUID); ok {
 								lb, err := odbi.rowToLB(lb.GoUUID)
@@ -321,6 +268,7 @@ func (odbi *ovndb) lrlbListImp(lr string) ([]*LoadBalancer, error) {
 								listLB = append(listLB, lb)
 							}
 						}
+						return listLB, nil
 					} else {
 						return nil, fmt.Errorf("type libovsdb.OvsSet casting failed")
 					}
@@ -330,7 +278,7 @@ func (odbi *ovndb) lrlbListImp(lr string) ([]*LoadBalancer, error) {
 						if err != nil {
 							return nil, err
 						}
-						listLB = append(listLB, lb)
+						return []*LoadBalancer{lb}, nil
 					} else {
 						return nil, fmt.Errorf("type libovsdb.UUID casting failed")
 					}
@@ -338,12 +286,8 @@ func (odbi *ovndb) lrlbListImp(lr string) ([]*LoadBalancer, error) {
 					return nil, fmt.Errorf("Unsupport type found in ovsdb rows")
 				}
 			}
-			lrFound = true
-			break
+			return []*LoadBalancer{}, nil
 		}
 	}
-	if !lrFound {
-		return nil, ErrorNotFound
-	}
-	return listLB, nil
+	return nil, ErrorNotFound
 }

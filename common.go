@@ -54,6 +54,7 @@ const (
 	TableEncap                    string = "Encap"
 	TablePortBinding              string = "Port_Binding"
 	TableSBGlobal                 string = "SB_Global"
+	TableChassisPrivate           string = "Chassis_Private"
 )
 
 var NBTablesOrder = []string{
@@ -81,6 +82,7 @@ var NBTablesOrder = []string{
 var SBTablesOrder = []string{
 	TableChassis,
 	TableDatapathBinding,
+	TableChassisPrivate,
 	TableEncap,
 	TablePortBinding,
 	TableSBGlobal,

@@ -18,11 +18,12 @@ package goovn
 
 import (
 	"testing"
+	"fmt"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestACLs(t *testing.T) {
+func TestLogicalSwitchACLs(t *testing.T) {
 	ovndbapi := getOVNClient(DBNB)
 	var cmds []*OvnCommand
 	var cmd *OvnCommand
@@ -141,7 +142,34 @@ func TestACLs(t *testing.T) {
 	}
 	assert.Equal(t, true, len(acls) == 2, "test[%s]", "add second acl")
 
+	// The following should fail because it is considered a duplicate of an existing ACL
 	cmd, err = ovndbapi.ACLAdd(LSW, "to-lport", MATCH_SECOND, "drop", 1001, map[string]string{"A": "b", "B": "b"}, false, "", "")
+	if err == nil {
+		t.Fatal(err)
+	}
+	if cmd != nil {
+		t.Fatal(err)
+	}
+	// cmd is nil, so this is noop
+	err = ovndbapi.Execute(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	acls, err = ovndbapi.ACLList(LSW)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, true, len(acls) == 2, "test[%s]", "add second acl")
+
+	// The following should fail because it is considered a duplicate of an existing ACL
+	cmd, err = ovndbapi.ACLAdd(LSW, "to-lport", MATCH_SECOND, "drop", 1001, nil, false, "", "")
+	if err == nil {
+		t.Fatal(err)
+	}
+
+	// Different priority is a different ACL, so this should succeed
+	cmd, err = ovndbapi.ACLAdd(LSW, "to-lport", MATCH_SECOND, "drop", 1002, map[string]string{"A": "a", "B": "b"}, false, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +184,38 @@ func TestACLs(t *testing.T) {
 	}
 	assert.Equal(t, true, len(acls) == 3, "test[%s]", "add second acl")
 
-	cmd, err = ovndbapi.ACLDel(LSW, "to-lport", MATCH, 1001, map[string]string{})
+	// Different direction is a different ACL, so this should succeed
+	cmd, err = ovndbapi.ACLAdd(LSW, "from-lport", MATCH_SECOND, "drop", 1001, map[string]string{"A": "a", "B": "b"}, false, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ovndbapi.Execute(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	acls, err = ovndbapi.ACLList(LSW)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, true, len(acls) == 4, "test[%s]", "add second acl")
+
+	cmd, err = ovndbapi.ACLDel(LSW, "to-lport", MATCH_SECOND, 1002, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ovndbapi.Execute(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	acls, err = ovndbapi.ACLList(LSW)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assert.Equal(t, true, len(acls) == 3, "test[%s]", "add second acl")
+
+	cmd, err = ovndbapi.ACLDel(LSW, "from-lport", MATCH_SECOND, 1001, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +230,7 @@ func TestACLs(t *testing.T) {
 	}
 	assert.Equal(t, true, len(acls) == 2, "test[%s]", "acl remove")
 
-	cmd, err = ovndbapi.ACLDel(LSW, "to-lport", MATCH_SECOND, 1001, map[string]string{"A": "a"})
+	cmd, err = ovndbapi.ACLDel(LSW, "to-lport", MATCH, 1001, map[string]string{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +246,14 @@ func TestACLs(t *testing.T) {
 
 	assert.Equal(t, true, len(acls) == 1, "test[%s]", "acl remove")
 
+	//The following delete should fail because external ids are provided, but they don't exist in any ACL
 	cmd, err = ovndbapi.ACLDel(LSW, "to-lport", MATCH_SECOND, 1001, map[string]string{"A": "b"})
+	if err == nil {
+		t.Fatal(err)
+	}
+
+	//The following delete should succeed because the provided external_ids provided are a subset of thoe in an existing ACL
+	cmd, err = ovndbapi.ACLDel(LSW, "to-lport", MATCH_SECOND, 1001, map[string]string{"A": "a"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,6 +267,12 @@ func TestACLs(t *testing.T) {
 		t.Fatal(err)
 	}
 	assert.Equal(t, true, len(acls) == 0, "test[%s]", "acl remove")
+
+	// The following ACLDel should fail because all the ACLs have been deleted.
+	cmd, err = ovndbapi.ACLDel(LSW, "to-lport", MATCH_SECOND, 1001, map[string]string{"A": "b"})
+	if err == nil {
+		t.Fatal(err)
+	}
 
 	cmd, err = ovndbapi.LSPDel(LSP)
 	if err != nil {
@@ -255,4 +327,171 @@ func TestACLs(t *testing.T) {
 	if err != nil {
 		assert.EqualError(t, ErrorNotFound, err.Error())
 	}
+}
+
+func compareMeterSlices(s1, s2 []string) bool {
+	if (s1 == nil || s1[0] == "") && (s2 == nil || s2[0] == "") {
+		return true
+	}
+	if len(s1) != len(s2) {
+		return false
+	}
+	for i, v := range s1 {
+		if v != s2[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// Returns true if an acl is in aclList
+func containsACL(aclList []*ACL, acl *ACL) bool{
+	for _, a := range aclList {
+		// Compare everything except UUID
+		if a.Action == acl.Action &&
+			a.Direction == acl.Direction &&
+			a.Match == acl.Match &&
+			a.Priority == acl.Priority &&
+			a.Log == acl.Log &&
+			compareMeterSlices(a.Meter, acl.Meter) &&
+			a.Severity == acl.Severity &&
+			compareExternalIds(iMapToSMap(a.ExternalID), acl.ExternalID) {
+			return true
+		}
+	}
+	return false
+}
+
+// converts and interface{} map to a string map
+func iMapToSMap(iMap map[interface{}]interface{}) map[string]string {
+	if iMap == nil {
+		return nil
+	}
+	sMap := make(map[string]string, len(iMap))
+	for k, v := range iMap {
+		sMap[fmt.Sprintf("%v", k)] = fmt.Sprintf("%v", v)
+	}
+	return sMap
+}
+
+func TestPortGroupACLs(t *testing.T) {
+	ovndbapi := getOVNClient(DBNB)
+	var cmd *OvnCommand
+	var cmds []*OvnCommand
+	var err error
+
+	t.Run("create switch, ports, port group, and meter for ACL testing", func(t *testing.T) {
+		cmds = make([]*OvnCommand, 0)
+
+		// Create switch and ports
+		cmd, err := ovndbapi.LSAdd(PG_TEST_LS1)
+		assert.Nil(t, err)
+		cmds = append(cmds, cmd)
+		// Add ports
+		cmd, err = ovndbapi.LSPAdd(PG_TEST_LS1, PG_TEST_LSP1)
+		assert.Nil(t, err)
+		cmds = append(cmds, cmd)
+		cmd, err = ovndbapi.LSPSetAddress(PG_TEST_LSP1, ADDR)
+		assert.Nil(t, err)
+		cmds = append(cmds, cmd)
+		cmd, err = ovndbapi.LSPSetPortSecurity(PG_TEST_LSP1, ADDR)
+		assert.Nil(t, err)
+		cmds = append(cmds, cmd)
+		cmd, err = ovndbapi.LSPAdd(PG_TEST_LS1, PG_TEST_LSP2)
+		assert.Nil(t, err)
+		cmds = append(cmds, cmd)
+		cmd, err = ovndbapi.LSPSetAddress(PG_TEST_LSP2, ADDR2)
+		assert.Nil(t, err)
+		cmds = append(cmds, cmd)
+		cmd, err = ovndbapi.LSPSetPortSecurity(PG_TEST_LSP2, ADDR2)
+		cmds = append(cmds, cmd)
+		assert.Nil(t, err)
+
+		result, err := ovndbapi.ExecuteR(cmds...)
+		assert.Nil(t, err)
+		assert.Equal(t, 3, len(result))
+
+		lsp1UUID := result[1]
+		lsp2UUID := result[2]
+
+		// Create port group
+		cmd, err = ovndbapi.PortGroupAdd(PG_TEST_PG1, []string{lsp1UUID, lsp2UUID}, nil)
+		assert.Nil(t, err)
+		err = ovndbapi.Execute(cmd)
+		assert.Nil(t, err)
+
+		// Create a meter
+		cmd, err = ovndbapi.MeterAdd("meter1", "drop", 101, "kbps", nil, 300)
+		assert.Nil(t, err)
+		// execute to create lsw and lsp
+		err = ovndbapi.Execute(cmd)
+		assert.Nil(t, err)
+	})
+
+	portGroupACLTests := []ACL{
+		{"", "drop", "from-lport", MATCH3, 1001, false, []string{""}, "", nil},
+		{"", "drop", "to-lport", MATCH, 1001, true, []string{"meter1"}, "alert", nil},
+		{"", "drop", "from-lport", MATCH, 1002, true, []string{"meter1"}, "alert", map[interface{}]interface{}{"A": "a", "B": "b"}},
+		{"", "drop", "to-lport", MATCH, 1002, true, []string{"meter1"}, "alert", nil},
+	}
+
+	t.Run("add ACLS to port group", func(t *testing.T) {
+		for i, tc := range portGroupACLTests {
+			cmd, err = ovndbapi.ACLAddEntity(PORT_GROUP, PG_TEST_PG1, tc.Direction, tc.Match, tc.Action, tc.Priority, iMapToSMap(tc.ExternalID), tc.Log, tc.Meter[0], tc.Severity)
+			assert.Nil(t, err)
+			err = ovndbapi.Execute(cmd)
+			assert.Nil(t, err)
+			acls, err := ovndbapi.ACLListEntity(PORT_GROUP, PG_TEST_PG1)
+			assert.Nil(t, err)
+			assert.Equal(t, i+1, len(acls))
+			assert.True(t, containsACL(acls, &tc))
+		}
+	})
+
+	t.Run("add duplicate ACLS to port group", func(t *testing.T) {
+		for _, tc := range portGroupACLTests {
+			cmd, err = ovndbapi.ACLAddEntity(PORT_GROUP, PG_TEST_PG1, tc.Direction, tc.Match, tc.Action, tc.Priority, iMapToSMap(tc.ExternalID), tc.Log, tc.Meter[0], tc.Severity)
+			assert.NotNil(t, err)
+		}
+	})
+
+	t.Run("delete ACLS from port group", func(t *testing.T) {
+		for i, tc := range portGroupACLTests {
+			cmd, err = ovndbapi.ACLDelEntity(PORT_GROUP, PG_TEST_PG1, tc.Direction, tc.Match, tc.Priority, iMapToSMap(tc.ExternalID))
+			assert.Nil(t, err)
+			err = ovndbapi.Execute(cmd)
+			assert.Nil(t, err)
+			acls, err := ovndbapi.ACLListEntity(PORT_GROUP, PG_TEST_PG1)
+			assert.Nil(t, err)
+			assert.Equal(t, len(portGroupACLTests)-1-i, len(acls))
+			assert.False(t, containsACL(acls, &tc))
+		}
+	})
+
+	t.Run("delete non-existent ACLS from port group", func(t *testing.T) {
+		for _, tc := range portGroupACLTests {
+			cmd, err = ovndbapi.ACLDelEntity(PORT_GROUP, PG_TEST_PG1, tc.Direction, tc.Match, tc.Priority, iMapToSMap(tc.ExternalID))
+			assert.NotNil(t, err)
+		}
+	})
+
+	t.Run("delete meter, switch, ports and port group used for ACL testing", func(t *testing.T) {
+		cmd, err = ovndbapi.MeterDel("meter1")
+		assert.Nil(t, err)
+		err = ovndbapi.Execute(cmd)
+		assert.Nil(t, err)
+
+		cmds = make([]*OvnCommand, 0)
+		cmd, err := ovndbapi.LSDel(PG_TEST_LS1)
+		assert.Nil(t, err)
+		cmds = append(cmds, cmd)
+		err = ovndbapi.Execute(cmd)
+		assert.Nil(t, err)
+
+		cmd, err = ovndbapi.PortGroupDel(PG_TEST_PG1)
+		assert.Nil(t, err)
+		cmds = append(cmds, cmd)
+		err = ovndbapi.Execute(cmd)
+		assert.Nil(t, err)
+	})
 }

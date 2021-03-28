@@ -24,11 +24,12 @@ import (
 
 // LoadBalancer ovnnb item
 type LoadBalancer struct {
-	UUID       string
-	Name       string
-	vips       map[interface{}]interface{}
-	protocol   string
-	ExternalID map[interface{}]interface{}
+	UUID            string
+	Name            string
+	VIPs            map[interface{}]interface{}
+	Protocol        string
+	SelectionFields string
+	ExternalID      map[interface{}]interface{}
 }
 
 func (odbi *ovndb) lbUpdateImp(name string, vipPort string, protocol string, addrs []string) (*OvnCommand, error) {
@@ -158,6 +159,43 @@ func (odbi *ovndb) lbGetImp(name string) ([]*LoadBalancer, error) {
 	return listLB, nil
 }
 
+func (odbi *ovndb) lbListImp() ([]*LoadBalancer, error) {
+	odbi.cachemutex.RLock()
+	defer odbi.cachemutex.RUnlock()
+
+	cacheLoadBalancer, ok := odbi.cache[TableLoadBalancer]
+	if !ok {
+		return nil, ErrorSchema
+	}
+
+	listLB := make([]*LoadBalancer, 0, len(cacheLoadBalancer))
+	for uuid := range cacheLoadBalancer {
+		lb, err := odbi.rowToLB(uuid)
+		if err != nil {
+			return nil, err
+		}
+		listLB = append(listLB, lb)
+	}
+
+	return listLB, nil
+}
+
+func (odbi *ovndb) lbSetSelectionFieldsImp(name string, selectionFields string) (*OvnCommand, error) {
+	row := make(OVNRow)
+	row["selection_fields"] = selectionFields
+
+	condition := libovsdb.NewCondition("name", "==", name)
+
+	updateOp := libovsdb.Operation{
+		Op:    opUpdate,
+		Table: TableLoadBalancer,
+		Row:   row,
+		Where: []interface{}{condition},
+	}
+	operations := []libovsdb.Operation{updateOp}
+	return &OvnCommand{operations, odbi, make([][]map[string]interface{}, len(operations))}, nil
+}
+
 func (odbi *ovndb) rowToLB(uuid string) (*LoadBalancer, error) {
 	cacheLoadBalancer, ok := odbi.cache[TableLoadBalancer][uuid]
 	if !ok {
@@ -166,11 +204,14 @@ func (odbi *ovndb) rowToLB(uuid string) (*LoadBalancer, error) {
 
 	lb := &LoadBalancer{
 		UUID:       uuid,
-		protocol:   cacheLoadBalancer.Fields["protocol"].(string),
+		Protocol:   cacheLoadBalancer.Fields["protocol"].(string),
 		Name:       cacheLoadBalancer.Fields["name"].(string),
-		vips:       cacheLoadBalancer.Fields["vips"].(libovsdb.OvsMap).GoMap,
+		VIPs:       cacheLoadBalancer.Fields["vips"].(libovsdb.OvsMap).GoMap,
 		ExternalID: cacheLoadBalancer.Fields["external_ids"].(libovsdb.OvsMap).GoMap,
 	}
 
+	if fields, ok := cacheLoadBalancer.Fields["selection_fields"].(string); ok {
+		lb.SelectionFields = fields
+	}
 	return lb, nil
 }

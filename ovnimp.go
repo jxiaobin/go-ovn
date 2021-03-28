@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	commitTransactionText = "commiting transaction"
+	commitTransactionText = "committing transaction"
 )
 
 var (
@@ -38,6 +38,10 @@ var (
 	ErrorNotFound = errors.New("object not found")
 	// ErrorExist used when object already exists in ovnnb
 	ErrorExist = errors.New("object exist")
+	// ErrorNoChanges used when function called, but no changes
+	ErrorNoChanges = errors.New("no changes requested")
+	// ErrorDuplicateName used when multiple rows are found when searching by name
+	ErrorDuplicateName = errors.New("duplicate name")
 )
 
 // OVNRow ovn nb/sb row
@@ -65,18 +69,16 @@ func (odbi *ovndb) getRowUUIDs(table string, row OVNRow) []string {
 			continue
 		}
 
-		found := false
+		isEqual := true
 		for field, value := range row {
 			if v, ok := drows.Fields[field]; ok {
-				if v == value {
-					found = true
-				} else {
-					found = false
+				if v != value {
+					isEqual = false
 					break
 				}
 			}
 		}
-		if found {
+		if isEqual {
 			uuids = append(uuids, uuid)
 		}
 	}
@@ -176,8 +178,13 @@ func (odbi *ovndb) transact(db string, ops ...libovsdb.Operation) ([]libovsdb.Op
 }
 
 func (odbi *ovndb) execute(cmds ...*OvnCommand) error {
+	_, err := odbi.ExecuteR(cmds...)
+	return err
+}
+
+func (odbi *ovndb) executeR(cmds ...*OvnCommand) ([]string, error) {
 	if cmds == nil {
-		return nil
+		return nil, nil
 	}
 	var ops []libovsdb.Operation
 	for _, cmd := range cmds {
@@ -186,11 +193,24 @@ func (odbi *ovndb) execute(cmds ...*OvnCommand) error {
 		}
 	}
 
-	_, err := odbi.transact(odbi.db, ops...)
+	results, err := odbi.transact(odbi.db, ops...)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+
+	// The total number of UUIDs will be <= number of results returned.
+	UUIDs := make([]string, 0, len(results))
+	for _, r := range results {
+		if len(r.UUID.GoUUID) > 0 {
+			UUIDs = append(UUIDs, r.UUID.GoUUID)
+		}
+	}
+
+	if len(UUIDs) > 0 {
+		return UUIDs, nil
+	}
+
+	return nil, nil
 }
 
 func (odbi *ovndb) float64_to_int(row libovsdb.Row) {
@@ -264,16 +284,16 @@ func (odbi *ovndb) populateCache(updates libovsdb.TableUpdates) {
 						odbi.signalCB.OnLoadBalancerCreate(lb)
 					case TableMeter:
 						meter := odbi.rowToMeter(uuid)
-						odbi.signalCB.onMeterCreate(meter)
+						odbi.signalCB.OnMeterCreate(meter)
 					case TableMeterBand:
 						band, _ := odbi.rowToMeterBand(uuid)
-						odbi.signalCB.onMeterBandCreate(band)
+						odbi.signalCB.OnMeterBandCreate(band)
 					case TableChassis:
 						chassis, _ := odbi.rowToChassis(uuid)
-						odbi.signalCB.onChassisCreate(chassis)
+						odbi.signalCB.OnChassisCreate(chassis)
 					case TableEncap:
 						encap, _ := odbi.rowToEncap(uuid)
-						odbi.signalCB.onEncapCreate(encap)
+						odbi.signalCB.OnEncapCreate(encap)
 					}
 				}
 			} else {
@@ -313,16 +333,16 @@ func (odbi *ovndb) populateCache(updates libovsdb.TableUpdates) {
 							odbi.signalCB.OnLoadBalancerDelete(lb)
 						case TableMeter:
 							meter := odbi.rowToMeter(uuid)
-							odbi.signalCB.onMeterDelete(meter)
+							odbi.signalCB.OnMeterDelete(meter)
 						case TableMeterBand:
 							band, _ := odbi.rowToMeterBand(uuid)
-							odbi.signalCB.onMeterBandDelete(band)
+							odbi.signalCB.OnMeterBandDelete(band)
 						case TableChassis:
 							chassis, _ := odbi.rowToChassis(uuid)
-							odbi.signalCB.onChassisDelete(chassis)
+							odbi.signalCB.OnChassisDelete(chassis)
 						case TableEncap:
 							encap, _ := odbi.rowToEncap(uuid)
-							odbi.signalCB.onEncapDelete(encap)
+							odbi.signalCB.OnEncapDelete(encap)
 						}
 					}(table, uuid)
 				}
@@ -344,6 +364,21 @@ func (odbi *ovndb) ConvertGoSetToStringArray(oset libovsdb.OvsSet) []string {
 		}
 	}
 	return ret
+}
+
+func (odbi *ovndb) optionalStringFieldToPointer(fieldValue interface{}) *string {
+	switch fieldValue.(type) {
+	case string:
+		temp := fieldValue.(string)
+		return &temp
+	case libovsdb.OvsSet:
+		temp := odbi.ConvertGoSetToStringArray(fieldValue.(libovsdb.OvsSet))
+		if len(temp) > 0 {
+			return &temp[0]
+		}
+		return nil
+	}
+	return nil
 }
 
 func stringToGoUUID(uuid string) libovsdb.UUID {
