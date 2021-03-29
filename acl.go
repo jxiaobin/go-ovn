@@ -380,3 +380,29 @@ func (odbi *ovndb) aclListImp(entityType EntityType, entity string) ([]*ACL, err
 	}
 	return nil, ErrorNotFound
 }
+
+// aclName could be name or uuid
+func (odbi *ovndb) aclGetImp(aclName string) ([]*ACL, error) {
+	odbi.cachemutex.RLock()
+	defer odbi.cachemutex.RUnlock()
+
+	cacheACL, ok := odbi.cache[TableACL]
+	if !ok {
+		return nil, ErrorSchema
+	}
+
+	var aclList []*ACL
+	if _, ok := cacheACL[aclName]; ok {
+		aclList = append(aclList, odbi.rowToACL(aclName))
+	} else {
+		for uuid, row := range cacheACL {
+			if raclName, ok := row.Fields["name"].(string); ok && aclName == raclName {
+				aclList = append(aclList, odbi.rowToACL(uuid))
+			}
+		}
+	}
+	if len(aclList) == 0 {
+		return nil, ErrorNotFound
+	}
+	return aclList, nil
+}

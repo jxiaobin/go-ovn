@@ -84,6 +84,8 @@ type Client interface {
 	ACLListEntity(entityType EntityType, entity string) ([]*ACL, error)
 	// Deprecated in favor of ACLListEntity(). Get all acl by logical switch
 	ACLList(ls string) ([]*ACL, error)
+	// Get ACL by name or UUID
+	ACLGet(acl string) ([]*ACL, error)
 
 	// Get AS
 	ASGet(name string) (*AddressSet, error)
@@ -254,6 +256,10 @@ type Client interface {
 	PortGroupDel(group string) (*OvnCommand, error)
 	// Get PortGroup data structure if it exists
 	PortGroupGet(group string) (*PortGroup, error)
+	// List all PortGroups
+	PortGroupList() ([]*PortGroup, error)
+	// Get Logical Switch Ports for given Port Group
+	GetLogicalPortsByPortGroup(string) ([]*LogicalSwitchPort, error)
 
 	// Close connection to OVN
 	Close() error
@@ -696,6 +702,10 @@ func (c *ovndb) ACLList(ls string) ([]*ACL, error) {
 	return c.aclListImp(LOGICAL_SWITCH, ls)
 }
 
+func (c *ovndb) ACLGet(acl string) ([]*ACL, error) {
+	return c.aclGetImp(acl)
+}
+
 func (c *ovndb) ASList() ([]*AddressSet, error) {
 	return c.asListImp()
 }
@@ -798,6 +808,10 @@ func (c *ovndb) PortGroupDel(group string) (*OvnCommand, error) {
 
 func (c *ovndb) PortGroupGet(group string) (*PortGroup, error) {
 	return c.pgGetImp(group)
+}
+
+func (c *ovndb) PortGroupList() ([]*PortGroup, error) {
+	return c.pgListImp()
 }
 
 // these functions are helpers for unit-tests, but not part of the API

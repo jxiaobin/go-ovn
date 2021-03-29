@@ -298,3 +298,20 @@ func (odbi *ovndb) GetLogicalPortsByPortGroup(group string) ([]*LogicalSwitchPor
 	}
 	return listLSP, nil
 }
+
+func (odbi *ovndb) pgListImp() ([]*PortGroup, error) {
+	odbi.cachemutex.RLock()
+	defer odbi.cachemutex.RUnlock()
+
+	cachePortGroup, ok := odbi.cache[TablePortGroup]
+	if !ok {
+		return nil, ErrorNotFound
+	}
+
+	var pgList []*PortGroup
+	for uuid, _ := range cachePortGroup {
+		pgList = append(pgList, odbi.RowToPortGroup(uuid))
+	}
+
+	return pgList, nil
+}
