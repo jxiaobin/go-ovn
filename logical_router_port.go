@@ -170,6 +170,8 @@ func (odbi *ovndb) rowToLogicalRouterPort(uuid string) *LogicalRouterPort {
 		lrp.GatewayChassis = []string{gateway_chassis.(string)}
 	case libovsdb.OvsSet:
 		lrp.GatewayChassis = odbi.ConvertGoSetToStringArray(gateway_chassis.(libovsdb.OvsSet))
+        case libovsdb.UUID:
+                lrp.GatewayChassis = []string{gateway_chassis.(libovsdb.UUID).GoUUID}
 	}
 	networks := odbi.cache[TableLogicalRouterPort][uuid].Fields["networks"]
 	switch networks.(type) {
