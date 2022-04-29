@@ -24,6 +24,7 @@ import (
 // Chassis_Private table OVN SB
 type ChassisPrivate struct {
 	UUID       string
+	Chassis    string
 	ExternalID map[interface{}]interface{}
 	Name       string
 	NbCfg      int
@@ -131,8 +132,15 @@ func (odbi *ovndb) rowToChassisPrivate(uuid string) (*ChassisPrivate, error) {
 		return nil, fmt.Errorf("row in chassis_private with uuid %s not found", uuid)
 	}
 
+	chassisUUID := ""
+	switch cacheChassisPrivate.Fields["chassis"].(type) {
+	case libovsdb.UUID:
+		chassisUUID = cacheChassisPrivate.Fields["chassis"].(libovsdb.UUID).GoUUID
+	}
+
 	chPrivate := &ChassisPrivate{
 		UUID:       uuid,
+		Chassis:    chassisUUID,
 		ExternalID: cacheChassisPrivate.Fields["external_ids"].(libovsdb.OvsMap).GoMap,
 		Name:       cacheChassisPrivate.Fields["name"].(string),
 		NbCfg:      cacheChassisPrivate.Fields["nb_cfg"].(int),
