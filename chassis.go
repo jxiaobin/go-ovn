@@ -26,6 +26,7 @@ type Chassis struct {
 	UUID                string
 	Encaps              []string
 	ExternalID          map[interface{}]interface{}
+	OtherConfig         map[interface{}]interface{}
 	Hostname            string
 	Name                string
 	NbCfg               int
@@ -181,11 +182,12 @@ func (odbi *ovndb) rowToChassis(uuid string) (*Chassis, error) {
 		return nil, fmt.Errorf("Chassis with uuid%s not found", uuid)
 	}
 	ch := &Chassis{
-		UUID:       uuid,
-		Name:       cacheChassis.Fields["name"].(string),
-		Hostname:   cacheChassis.Fields["hostname"].(string),
-		ExternalID: cacheChassis.Fields["external_ids"].(libovsdb.OvsMap).GoMap,
-		NbCfg:      cacheChassis.Fields["nb_cfg"].(int),
+		UUID:        uuid,
+		Name:        cacheChassis.Fields["name"].(string),
+		Hostname:    cacheChassis.Fields["hostname"].(string),
+		ExternalID:  cacheChassis.Fields["external_ids"].(libovsdb.OvsMap).GoMap,
+		OtherConfig: cacheChassis.Fields["other_config"].(libovsdb.OvsMap).GoMap,
+		NbCfg:       cacheChassis.Fields["nb_cfg"].(int),
 	}
 
 	if tz, ok := cacheChassis.Fields["transport_zones"]; ok {
